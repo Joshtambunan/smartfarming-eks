@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SmartFarming Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f1923;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a2e1a;
+      border-bottom: 2px solid #22c55e;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 { font-size: 1.4rem; color: #22c55e; }
+    header span { font-size: 0.85rem; color: #94a3b8; }
+
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #22c55e;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      padding: 32px;
+    }
+
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid #334155;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .card:hover { transform: translateY(-3px); border-color: #22c55e; }
+
+    .card .icon { font-size: 2rem; margin-bottom: 12px; }
+    .card .label { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+    .card .value { font-size: 2.2rem; font-weight: 700; color: #22c55e; margin: 4px 0; }
+    .card .unit { font-size: 0.85rem; color: #64748b; }
+    .card .time { font-size: 0.75rem; color: #475569; margin-top: 8px; }
+
+    .section-title {
+      padding: 0 32px;
+      font-size: 1rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: -8px;
+    }
+
+    .table-section { padding: 16px 32px 32px; }
+    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }
+    th { background: #0f1923; color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; padding: 12px 16px; text-align: left; }
+    td { padding: 12px 16px; border-top: 1px solid #334155; font-size: 0.9rem; }
+    tr:hover td { background: #162032; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-green  { background: #14532d; color: #22c55e; }
+    .badge-blue   { background: #1e3a5f; color: #60a5fa; }
+    .badge-yellow { background: #422006; color: #fbbf24; }
+    .badge-red    { background: #450a0a; color: #f87171; }
+
+    .controls {
+      padding: 0 32px 24px;
+      display: flex;
+      gap: 12px;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.85; }
+
+    .btn-primary { background: #22c55e; color: #0f1923; }
+    .btn-danger  { background: #ef4444; color: white; }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+
+    #sim-status { font-size: 0.85rem; color: #94a3b8; align-self: center; }
+    #last-update { font-size: 0.8rem; color: #475569; align-self: center; margin-left: auto; }
+
+    .error-msg { color: #f87171; font-size: 0.85rem; padding: 8px 32px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="status-dot"></div>
+  <h1>🌱 SmartFarming Dashboard</h1>
+  <span>AWS EKS – IT Del 2026</span>
+</header>
+
+<div class="controls" style="padding-top: 24px;">
+  <button class="btn-primary" onclick="startSimulator()">▶ Start Simulator</button>
+  <button class="btn-danger" onclick="stopSimulator()">■ Stop Simulator</button>
+  <button class="btn-secondary" onclick="fetchAll()">↻ Refresh</button>
+  <span id="sim-status">–</span>
+  <span id="last-update"></span>
+</div>
+
+<p class="section-title">Live Sensor Readings</p>
+<div class="grid" id="sensor-cards">
+  <div class="card"><div class="icon">🌡️</div><div class="label">Temperature</div><div class="value" id="val-temp">–</div><div class="unit">°C</div></div>
+  <div class="card"><div class="icon">💧</div><div class="label">Humidity</div><div class="value" id="val-humid">–</div><div class="unit">%</div></div>
+  <div class="card"><div class="icon">⚗️</div><div class="label">pH Level</div><div class="value" id="val-ph">–</div><div class="unit">pH</div></div>
+  <div class="card"><div class="icon">⚡</div><div class="label">EC</div><div class="value" id="val-ec">–</div><div class="unit">mS/cm</div></div>
+  <div class="card"><div class="icon">🪣</div><div class="label">Water Level</div><div class="value" id="val-water">–</div><div class="unit">cm</div></div>
+  <div class="card"><div class="icon">☀️</div><div class="label">Light</div><div class="value" id="val-light">–</div><div class="unit">lux</div></div>
+</div>
+
+<p class="section-title">Recent Data Log</p>
+<div class="table-section">
+  <table>
+    <thead>
+      <tr>
+        <th>Sensor ID</th>
+        <th>Type</th>
+        <th>Value</th>
+        <th>Unit</th>
+        <th>Location</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody id="data-table">
+      <tr><td colspan="6" style="text-align:center;color:#475569;">Memuat data...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  // Base URL backend service
+  // Di lokal: pakai localhost. Di EKS: ganti dengan service name atau Ingress URL
+  const FARM_API = window.FARM_DATA_URL || "http://localhost:8002";
+  const STORAGE_API = window.STORAGE_URL || "http://localhost:8001";
+
+  const SENSOR_TYPE_CONFIG = {
+    temperature:  { icon: "🌡️", badge: "badge-yellow" },
+    humidity:     { icon: "💧", badge: "badge-blue" },
+    ph:           { icon: "⚗️", badge: "badge-green" },
+    ec:           { icon: "⚡", badge: "badge-blue" },
+    water_level:  { icon: "🪣", badge: "badge-blue" },
+    light:        { icon: "☀️", badge: "badge-yellow" },
+  };
+
+  const VALUE_FIELDS = {
+    temperature: "val-temp",
+    humidity:    "val-humid",
+    ph:          "val-ph",
+    ec:          "val-ec",
+    water_level: "val-water",
+    light:       "val-light",
+  };
+
+  async function fetchLatest() {
+    try {
+      const res = await fetch(`${FARM_API}/sensors/latest`);
+      const data = await res.json();
+      data.latest.forEach(row => {
+        const el = document.getElementById(VALUE_FIELDS[row.sensor_type]);
+        if (el) el.textContent = row.value;
+      });
+    } catch (e) {
+      console.error("Gagal fetch latest:", e);
+    }
+  }
+
+  async function fetchLog() {
+    try {
+      const res = await fetch(`${FARM_API}/sensors?limit=20`);
+      const data = await res.json();
+      const tbody = document.getElementById("data-table");
+      if (!data.data.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#475569;">Belum ada data. Start simulator dulu.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.data.map(row => {
+        const cfg = SENSOR_TYPE_CONFIG[row.sensor_type] || { icon: "📊", badge: "badge-green" };
+        const time = new Date(row.recorded_at).toLocaleTimeString("id-ID");
+        return `<tr>
+          <td>${row.sensor_id}</td>
+          <td><span class="badge ${cfg.badge}">${cfg.icon} ${row.sensor_type}</span></td>
+          <td>${row.value}</td>
+          <td>${row.unit}</td>
+          <td>${row.location}</td>
+          <td>${time}</td>
+        </tr>`;
+      }).join("");
+    } catch (e) {
+      document.getElementById("data-table").innerHTML =
+        '<tr><td colspan="6" style="text-align:center;color:#f87171;">Gagal konek ke farm-data-service</td></tr>';
+    }
+  }
+
+  async function checkSimStatus() {
+    try {
+      const res = await fetch(`${FARM_API}/simulator/status`);
+      const data = await res.json();
+      const el = document.getElementById("sim-status");
+      el.textContent = data.running ? "🟢 Simulator Aktif" : "🔴 Simulator Mati";
+      el.style.color = data.running ? "#22c55e" : "#f87171";
+    } catch {}
+  }
+
+  async function startSimulator() {
+    await fetch(`${FARM_API}/simulator/start`, { method: "POST" });
+    checkSimStatus();
+  }
+
+  async function stopSimulator() {
+    await fetch(`${FARM_API}/simulator/stop`, { method: "POST" });
+    checkSimStatus();
+  }
+
+  async function fetchAll() {
+    await Promise.all([fetchLatest(), fetchLog(), checkSimStatus()]);
+    document.getElementById("last-update").textContent =
+      "Update: " + new Date().toLocaleTimeString("id-ID");
+  }
+
+  // Auto refresh setiap 30 detik
+  fetchAll();
+  setInterval(fetchAll, 30000);
+</script>
+</body>
+</html>

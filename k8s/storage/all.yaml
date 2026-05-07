@@ -1,0 +1,143 @@
+# ============================================================
+# k8s/storage/all.yaml
+#
+# Semua manifest untuk storage-service:
+# - Namespace
+# - ServiceAccount (dengan IRSA annotation)
+# - Deployment
+# - Service (ClusterIP)
+# - HorizontalPodAutoscaler
+# ============================================================
+
+---
+# 1. Namespace – isolasi resource storage-service
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: storage
+  labels:
+    project: smartfarming
+    service: storage-service
+
+---
+# 2. ServiceAccount – KUNCI IRSA!
+# Annotation eks.amazonaws.com/role-arn menghubungkan SA ini ke IAM Role.
+# Pod yang pakai SA ini otomatis mendapat credentials sementara dari IAM role.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: storage-service-sa
+  namespace: storage
+  annotations:
+    eks.amazonaws.com/role-arn: "GANTI_DENGAN_IRSA_STORAGE_ROLE_ARN"
+    # ↑ Isi dengan output terraform: irsa_storage_role_arn
+  labels:
+    project: smartfarming
+    service: storage-service
+
+---
+# 3. Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storage-service
+  namespace: storage
+  labels:
+    app: storage-service
+    project: smartfarming
+spec:
+  replicas: 2   # Minimal 2 replicas sesuai requirement
+  selector:
+    matchLabels:
+      app: storage-service
+  template:
+    metadata:
+      labels:
+        app: storage-service
+    spec:
+      serviceAccountName: storage-service-sa  # Pakai SA yang sudah di-annotate IRSA
+
+      # Security context: jalankan container sebagai non-root
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: storage-service
+          image: "ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/smartfarming-storage:IMAGE_TAG"
+          # ↑ Akan diganti saat build & push (lihat README FASE 3)
+          ports:
+            - containerPort: 8001
+
+          env:
+            - name: S3_BUCKET_NAME
+              value: "GANTI_DENGAN_S3_BUCKET_NAME"   # ← Output terraform: s3_bucket_name
+            - name: AWS_REGION
+              value: "ap-southeast-1"
+
+          # Resource limits – wajib ada untuk HPA dan stabilitas cluster
+          resources:
+            requests:
+              cpu: "100m"       # 0.1 vCPU
+              memory: "128Mi"
+            limits:
+              cpu: "500m"       # 0.5 vCPU
+              memory: "512Mi"
+
+          # Liveness probe – restart pod jika tidak sehat
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 20
+
+          # Readiness probe – stop traffic ke pod jika belum siap
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+---
+# 4. ClusterIP Service – akses internal dalam cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-service
+  namespace: storage
+  labels:
+    app: storage-service
+    project: smartfarming
+spec:
+  type: ClusterIP
+  selector:
+    app: storage-service
+  ports:
+    - port: 8001
+      targetPort: 8001
+      protocol: TCP
+
+---
+# 5. HorizontalPodAutoscaler – scale otomatis berdasarkan CPU
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: storage-service-hpa
+  namespace: storage
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: storage-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70   # Scale up jika CPU rata-rata > 70%

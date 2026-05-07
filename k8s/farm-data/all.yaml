@@ -1,0 +1,135 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: farm-data
+  labels:
+    project: smartfarming
+    service: farm-data-service
+
+---
+# ServiceAccount dengan IRSA annotation untuk akses RDS
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: farm-data-service-sa
+  namespace: farm-data
+  annotations:
+    eks.amazonaws.com/role-arn: "GANTI_DENGAN_IRSA_FARMDATA_ROLE_ARN"
+    # ↑ Isi dengan output terraform: irsa_farmdata_role_arn
+  labels:
+    project: smartfarming
+    service: farm-data-service
+
+---
+# ConfigMap untuk konfigurasi database (endpoint dll, bukan password)
+# Password dihandle oleh IAM auth di production, tidak disimpan di sini
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: farm-data-config
+  namespace: farm-data
+data:
+  DB_HOST: "GANTI_DENGAN_RDS_ENDPOINT"   # ← Output terraform: rds_endpoint
+  DB_PORT: "5432"
+  DB_NAME: "smartfarming"
+  DB_USER: "farmuser"
+  AWS_REGION: "ap-southeast-1"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: farm-data-service
+  namespace: farm-data
+  labels:
+    app: farm-data-service
+    project: smartfarming
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: farm-data-service
+  template:
+    metadata:
+      labels:
+        app: farm-data-service
+    spec:
+      serviceAccountName: farm-data-service-sa
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: farm-data-service
+          image: "ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/smartfarming-farmdata:IMAGE_TAG"
+          ports:
+            - containerPort: 8002
+
+          # Ambil konfigurasi dari ConfigMap
+          envFrom:
+            - configMapRef:
+                name: farm-data-config
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 30   # RDS butuh waktu lebih lama untuk connect
+            periodSeconds: 20
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: farm-data-service
+  namespace: farm-data
+  labels:
+    app: farm-data-service
+    project: smartfarming
+spec:
+  type: ClusterIP
+  selector:
+    app: farm-data-service
+  ports:
+    - port: 8002
+      targetPort: 8002
+      protocol: TCP
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: farm-data-service-hpa
+  namespace: farm-data
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: farm-data-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

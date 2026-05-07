@@ -1,0 +1,11 @@
+variable "project_name"        { type = string }
+variable "eks_oidc_url"         { type = string }
+variable "eks_oidc_arn"         { type = string }
+variable "s3_bucket_arn"        { type = string }
+variable "rds_resource_id"      { type = string }
+variable "storage_namespace"    { type = string }
+variable "storage_sa_name"      { type = string }
+variable "farmdata_namespace"   { type = string }
+variable "farmdata_sa_name"     { type = string }
+variable "frontend_namespace"   { type = string }
+variable "frontend_sa_name"     { type = string }

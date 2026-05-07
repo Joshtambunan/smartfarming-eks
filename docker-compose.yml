@@ -1,0 +1,120 @@
+# ============================================================
+# docker-compose.yml – Local Development Environment
+#
+# Jalankan semua service + PostgreSQL di lokal untuk development.
+# JANGAN pakai file ini untuk production.
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  # ──────────────────────────────────────────
+  # PostgreSQL – database lokal
+  # Di EKS production: digantikan oleh Amazon RDS
+  # ──────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: smartfarming-postgres
+    environment:
+      POSTGRES_DB: smartfarming
+      POSTGRES_USER: farmuser
+      POSTGRES_PASSWORD: localpassword   # Hanya untuk lokal!
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmuser -d smartfarming"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smartfarming-net
+
+  # ──────────────────────────────────────────
+  # storage-service
+  # Di EKS: menggunakan IRSA untuk akses S3
+  # Di lokal: menggunakan minio atau env var AWS kredensial
+  # ──────────────────────────────────────────
+  storage-service:
+    build:
+      context: ./services/storage-service
+      dockerfile: Dockerfile
+    container_name: smartfarming-storage
+    ports:
+      - "8001:8001"
+    environment:
+      # Untuk lokal, gunakan LocalStack atau set bucket name aja
+      # Jangan pernah taruh AWS key di sini untuk production!
+      S3_BUCKET_NAME: smartfarming-storage-local
+      AWS_REGION: ap-southeast-1
+      # Untuk testing lokal tanpa S3 asli:
+      # AWS_ACCESS_KEY_ID: test
+      # AWS_SECRET_ACCESS_KEY: test
+      # AWS_ENDPOINT_URL: http://localstack:4566
+    networks:
+      - smartfarming-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ──────────────────────────────────────────
+  # farm-data-service
+  # Di EKS: terhubung ke RDS via IAM Authentication
+  # Di lokal: terhubung ke postgres container di atas
+  # ──────────────────────────────────────────
+  farm-data-service:
+    build:
+      context: ./services/farm-data-service
+      dockerfile: Dockerfile
+    container_name: smartfarming-farmdata
+    ports:
+      - "8002:8002"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: smartfarming
+      DB_USER: farmuser
+      DB_PASSWORD: localpassword     # Hanya untuk lokal!
+      AWS_REGION: ap-southeast-1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - smartfarming-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ──────────────────────────────────────────
+  # frontend-service
+  # Dashboard UI untuk visualisasi data sensor
+  # ──────────────────────────────────────────
+  frontend-service:
+    build:
+      context: ./services/frontend-service
+      dockerfile: Dockerfile
+    container_name: smartfarming-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - farm-data-service
+      - storage-service
+    networks:
+      - smartfarming-net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  smartfarming-net:
+    driver: bridge

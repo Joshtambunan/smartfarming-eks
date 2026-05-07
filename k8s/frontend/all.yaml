@@ -1,0 +1,125 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: frontend
+  labels:
+    project: smartfarming
+    service: frontend-service
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend-service-sa
+  namespace: frontend
+  annotations:
+    eks.amazonaws.com/role-arn: "GANTI_DENGAN_IRSA_FRONTEND_ROLE_ARN"
+  labels:
+    project: smartfarming
+    service: frontend-service
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: frontend
+data:
+  # URL backend service – diakses oleh browser user, bukan internal cluster
+  # Setelah ada Ingress/LoadBalancer, ganti dengan URL publik
+  FARM_DATA_URL: "http://farm-data-service.farm-data.svc.cluster.local:8002"
+  STORAGE_URL: "http://storage-service.storage.svc.cluster.local:8001"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-service
+  namespace: frontend
+  labels:
+    app: frontend-service
+    project: smartfarming
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend-service
+  template:
+    metadata:
+      labels:
+        app: frontend-service
+    spec:
+      serviceAccountName: frontend-service-sa
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101   # nginx user
+        fsGroup: 101
+
+      containers:
+        - name: frontend-service
+          image: "ACCOUNT_ID.dkr.ecr.ap-southeast-1.amazonaws.com/smartfarming-frontend:IMAGE_TAG"
+          ports:
+            - containerPort: 3000
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: frontend
+  labels:
+    app: frontend-service
+    project: smartfarming
+spec:
+  type: LoadBalancer   # Expose ke luar cluster agar bisa diakses dari browser
+  selector:
+    app: frontend-service
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-service-hpa
+  namespace: frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
