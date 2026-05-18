@@ -477,9 +477,4 @@ terraform destroy
 ---
 
 ## 👥 Tim & Kontak
-
-| Nama | NIM | Role |
-|---|---|---|
-| [Nama] | [NIM] | Developer |
-
-**Institut Teknologi Del – 2026**
+Josh Delon Tambunan
